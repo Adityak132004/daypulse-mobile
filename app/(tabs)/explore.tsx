@@ -1,112 +1,166 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useState } from 'react';
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
+import { ListingCard } from '@/components/ListingCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { DUMMY_LISTINGS } from '@/data/listings';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
-export default function TabTwoScreen() {
+const FILTER_TABS = ['Stays', 'Experiences', 'Cars'] as const;
+
+export default function ExploreScreen() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const [activeTab, setActiveTab] = useState<(typeof FILTER_TABS)[number]>('Stays');
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const iconColor = useThemeColor({}, 'icon');
+  const borderColor = useThemeColor(
+    { light: '#E0E0E0', dark: '#3A3A3C' },
+    'background',
+  );
+  const tabActiveBg = useThemeColor(
+    { light: 'rgba(0,0,0,0.08)', dark: 'rgba(255,255,255,0.12)' },
+    'background',
+  );
+
+  const cardWidth = (width - 48) / 2;
+
+  const toggleFavorite = (id: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
+    <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <ThemedText type="title">Explore</ThemedText>
+          <ThemedText style={styles.subtitle}>Find your next stay</ThemedText>
+        </View>
+      </View>
+
+      {/* Search bar */}
+      <Pressable style={[styles.searchBar, { borderColor }]}>
+        <MaterialIcons name="search" size={24} color={iconColor} />
+        <ThemedText style={styles.searchPlaceholder}>
+          Where to? · Any week · Add guests
         </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
+      </Pressable>
+
+      {/* Filter tabs */}
+      <View style={styles.tabs}>
+        {FILTER_TABS.map((tab) => (
+          <Pressable
+            key={tab}
+            onPress={() => setActiveTab(tab)}
+            style={[
+              styles.tab,
+              activeTab === tab && { backgroundColor: tabActiveBg },
+            ]}>
+            <ThemedText
+              type={activeTab === tab ? 'defaultSemiBold' : 'default'}
+              style={activeTab === tab ? styles.tabTextActive : styles.tabText}>
+              {tab}
             </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* Listings grid */}
+      <FlatList
+        data={DUMMY_LISTINGS}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.row}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 80 }]}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => (
+          <View style={[styles.cardWrapper, { width: cardWidth }]}>
+            <ListingCard
+              listing={item}
+              isFavorite={favorites.has(item.id)}
+              onFavoritePress={() => toggleFavorite(item.id)}
+            />
+          </View>
+        )}
+      />
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
   },
-  titleContainer: {
+  header: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  subtitle: {
+    fontSize: 14,
+    opacity: 0.7,
+    marginTop: 4,
+  },
+  searchBar: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  searchPlaceholder: {
+    fontSize: 16,
+    opacity: 0.7,
+  },
+  tabs: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     gap: 8,
+  },
+  tab: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+  },
+  tabText: {
+    fontSize: 14,
+  },
+  tabTextActive: {
+    fontSize: 14,
+  },
+  listContent: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  row: {
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    gap: 16,
+  },
+  cardWrapper: {
+    flex: 1,
   },
 });
