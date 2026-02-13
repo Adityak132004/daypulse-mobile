@@ -1,0 +1,4 @@
+# Disable JWT verification for parse-license so it can be called during finish-signup
+# (user session may not be fully established when scanning license)
+[functions.parse-license]
+verify_jwt = false

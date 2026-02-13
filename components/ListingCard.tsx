@@ -15,8 +15,8 @@ type ListingCardProps = {
 };
 
 /**
- * Reusable card component for displaying a single listing in an Airbnb-style grid.
- * Shows image, favorite button, title, location, price, and rating.
+ * Reusable card component for displaying a single gym listing.
+ * Shows image, favorite button, title, location, daily price, stars, and reviews.
  */
 export function ListingCard({
   listing,
@@ -29,7 +29,7 @@ export function ListingCard({
     <Pressable onPress={onPress} style={styles.card}>
       <ThemedView style={styles.imageContainer}>
         <Image
-          source={{ uri: listing.imageUrl }}
+          source={{ uri: listing.imageUrls?.[0] ?? listing.imageUrl ?? '' }}
           style={styles.image}
           contentFit="cover"
         />
@@ -54,6 +54,12 @@ export function ListingCard({
             {listing.location}
           </ThemedText>
         </View>
+        <View style={styles.distanceRow}>
+          <MaterialIcons name="near-me" size={14} color={iconColor} />
+          <ThemedText style={styles.distanceText}>
+            {(listing.distanceFromMe ?? 0)} mi away
+          </ThemedText>
+        </View>
         <View style={styles.footer}>
           <View style={styles.ratingRow}>
             <MaterialIcons name="star" size={14} color={iconColor} />
@@ -66,7 +72,7 @@ export function ListingCard({
           </View>
           <ThemedText type="defaultSemiBold" style={styles.price}>
             ${listing.price}
-            <ThemedText style={styles.priceUnit}> / night</ThemedText>
+            <ThemedText style={styles.priceUnit}> / day</ThemedText>
           </ThemedText>
         </View>
       </View>
@@ -107,6 +113,15 @@ const styles = StyleSheet.create({
   },
   location: {
     fontSize: 14,
+    opacity: 0.8,
+  },
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  distanceText: {
+    fontSize: 12,
     opacity: 0.8,
   },
   footer: {
