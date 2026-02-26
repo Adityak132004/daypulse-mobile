@@ -4,6 +4,7 @@
  */
 
 import type { Listing, ListingCategory } from '@/data/listings';
+import { distanceMiles } from './location';
 import { supabase } from './supabase';
 
 export type DbListing = {
@@ -20,15 +21,22 @@ export type DbListing = {
   amenities: string[];
   latitude: number | null;
   longitude: number | null;
+  hours_of_operation: string | null;
   created_at: string;
 };
 
 const VALID_CATEGORIES = ['All', '24/7', 'CrossFit', 'Yoga', 'Pool', 'Boutique', 'Budget'] as const;
 
-function mapDbListingToApp(row: DbListing): Listing {
+function mapDbListingToApp(row: DbListing, userLat?: number | null, userLon?: number | null): Listing {
   const category = VALID_CATEGORIES.includes(row.category as ListingCategory)
     ? (row.category as ListingCategory)
     : 'Boutique';
+  const lat = row.latitude != null ? Number(row.latitude) : null;
+  const lon = row.longitude != null ? Number(row.longitude) : null;
+  let distanceFromMe = 0;
+  if (userLat != null && userLon != null && lat != null && lon != null) {
+    distanceFromMe = Math.round(distanceMiles(userLat, userLon, lat, lon) * 10) / 10;
+  }
   return {
     id: row.id,
     title: row.title,
@@ -42,11 +50,14 @@ function mapDbListingToApp(row: DbListing): Listing {
     description: row.description ?? undefined,
     category,
     amenities: Array.isArray(row.amenities) ? row.amenities : [],
-    distanceFromMe: 0, // TODO: compute from user location when available
+    distanceFromMe,
+    latitude: lat,
+    longitude: lon,
+    hoursOfOperation: row.hours_of_operation ?? undefined,
   };
 }
 
-export async function fetchListings(): Promise<Listing[]> {
+export async function fetchListings(userLat?: number | null, userLon?: number | null): Promise<Listing[]> {
   const { data, error } = await supabase
     .from('listings')
     .select('*')
@@ -57,7 +68,8 @@ export async function fetchListings(): Promise<Listing[]> {
     return [];
   }
 
-  return (data ?? []).map(mapDbListingToApp);
+  const mapped = (data ?? []).map((row) => mapDbListingToApp(row as DbListing, userLat, userLon));
+  return mapped;
 }
 
 export type InsertListingInput = {
@@ -154,4 +166,70 @@ export async function insertBooking(
   }
 
   return data as DbBooking;
+}
+
+export type ListingReview = {
+  id: string;
+  user_id: string;
+  listing_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+};
+
+export async function fetchListingReviews(listingId: string): Promise<ListingReview[]> {
+  const { data, error } = await supabase
+    .from('reviews')
+    .select('id, user_id, listing_id, rating, comment, created_at')
+    .eq('listing_id', listingId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[reviews] fetch error:', error);
+    return [];
+  }
+  return (data ?? []) as ListingReview[];
+}
+
+/** Fetch all reviews written by the user (to know which listings they have already reviewed). */
+export async function fetchReviewsByUser(userId: string): Promise<{ listing_id: string }[]> {
+  const { data, error } = await supabase
+    .from('reviews')
+    .select('listing_id')
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[reviews] fetchByUser error:', error);
+    return [];
+  }
+  return (data ?? []) as { listing_id: string }[];
+}
+
+export type InsertReviewInput = {
+  userId: string;
+  listingId: string;
+  bookingId?: string | null;
+  rating: number;
+  comment?: string | null;
+};
+
+/** Insert a review for a listing (e.g. after a visit). One review per user per listing (unique constraint). */
+export async function insertReview(input: InsertReviewInput): Promise<{ id: string } | null> {
+  const { data, error } = await supabase
+    .from('reviews')
+    .insert({
+      user_id: input.userId,
+      listing_id: input.listingId,
+      booking_id: input.bookingId ?? null,
+      rating: Math.min(5, Math.max(1, Math.round(input.rating))),
+      comment: input.comment?.trim() || null,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[reviews] insert error:', error);
+    return null;
+  }
+  return data as { id: string };
 }

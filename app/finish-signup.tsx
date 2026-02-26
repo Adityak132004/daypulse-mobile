@@ -1,14 +1,9 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  InteractionManager,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -22,7 +17,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
-import { parseLicense } from '@/lib/parse-license';
 import { supabase } from '@/lib/supabase';
 
 const AIRBNB_RED = '#FF5A5F';
@@ -47,16 +41,16 @@ export default function FinishSignupScreen() {
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
+  const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [licenseImageUri, setLicenseImageUri] = useState<string | null>(null);
-  const [parsingLicense, setParsingLicense] = useState(false);
   const firstNameRef = useRef(firstName);
   const lastNameRef = useRef(lastName);
   const dateOfBirthRef = useRef(dateOfBirth);
   const addressRef = useRef(address);
   const cityRef = useRef(city);
+  const phoneRef = useRef(phone);
 
   useEffect(() => {
     firstNameRef.current = firstName;
@@ -64,114 +58,47 @@ export default function FinishSignupScreen() {
     dateOfBirthRef.current = dateOfBirth;
     addressRef.current = address;
     cityRef.current = city;
-  }, [firstName, lastName, dateOfBirth, address, city]);
+    phoneRef.current = phone;
+  }, [firstName, lastName, dateOfBirth, address, city, phone]);
 
   const textColor = useThemeColor({}, 'text');
   const borderColor = useThemeColor({ light: '#E0E0E0', dark: '#3A3A3C' }, 'background');
   const secondaryTextColor = useThemeColor({ light: '#717171', dark: '#A1A1A1' }, 'text');
 
-  const isFormValid = firstName.trim().length > 0 && lastName.trim().length > 0;
+  const isFormValid =
+    firstName.trim().length > 0 &&
+    lastName.trim().length > 0 &&
+    phone.trim().length > 0;
 
+  // Load profile so returning users see existing data
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email) setEmail(user.email);
-    });
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      if (user.email) setEmail(user.email);
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name, last_name, date_of_birth, address, city, phone')
+        .eq('id', user.id)
+        .single();
+      if (cancelled || !profile) return;
+      if (profile.first_name) setFirstName(profile.first_name);
+      if (profile.last_name) setLastName(profile.last_name);
+      if (profile.date_of_birth) {
+        const d = new Date(profile.date_of_birth);
+        if (!isNaN(d.getTime())) setDateOfBirth(d);
+      }
+      if (profile.address) setAddress(profile.address);
+      if (profile.city) setCity(profile.city);
+      if (profile.phone) setPhone(profile.phone);
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const handleDateChange = (_: unknown, selectedDate?: Date) => {
     if (Platform.OS === 'android') setShowDatePicker(false);
     if (selectedDate) setDateOfBirth(selectedDate);
-  };
-
-  const showLicenseImageOptions = () => {
-    Alert.alert(
-      'Add driver\'s license',
-      'Choose how to add your photo',
-      [
-        { text: 'Take photo', onPress: handleTakePhoto },
-        { text: 'Choose from library', onPress: handlePickFromLibrary },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  };
-
-  const processLicenseImage = async (uri: string, base64: string | null | undefined) => {
-    setLicenseImageUri(uri);
-    if (!base64) return;
-
-    setParsingLicense(true);
-    setError(null);
-    try {
-      const parsed = await parseLicense(base64, 'image/jpeg');
-      InteractionManager.runAfterInteractions(() => {
-        if (parsed.firstName) {
-          setFirstName(parsed.firstName);
-          firstNameRef.current = parsed.firstName;
-        }
-        if (parsed.lastName) {
-          setLastName(parsed.lastName);
-          lastNameRef.current = parsed.lastName;
-        }
-        if (parsed.dateOfBirth) {
-          const d = new Date(parsed.dateOfBirth);
-          if (!isNaN(d.getTime())) {
-            setDateOfBirth(d);
-            dateOfBirthRef.current = d;
-          }
-        }
-        if (parsed.address) {
-          setAddress(parsed.address);
-          addressRef.current = parsed.address;
-        }
-        if (parsed.city) {
-          setCity(parsed.city);
-          cityRef.current = parsed.city;
-        }
-        setParsingLicense(false);
-        Keyboard.dismiss();
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not read license details. Please enter manually.');
-      setParsingLicense(false);
-    }
-  };
-
-  const handleTakePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Camera access is needed to take a photo of your license.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-      base64: true,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      await processLicenseImage(asset.uri, asset.base64 ?? undefined);
-    }
-  };
-
-  const handlePickFromLibrary = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Photo library access is needed to choose a photo.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-      base64: true,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      await processLicenseImage(asset.uri, asset.base64 ?? undefined);
-    }
   };
 
   const handleAgreeAndContinue = async () => {
@@ -181,10 +108,18 @@ export default function FinishSignupScreen() {
     setLoading(true);
     setError(null);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError('Not signed in');
+        setLoading(false);
+        return;
+      }
       const dob = dateOfBirthRef.current;
       const addr = addressRef.current.trim();
       const c = cityRef.current.trim();
       const dobStr = `${dob.getFullYear()}-${String(dob.getMonth() + 1).padStart(2, '0')}-${String(dob.getDate()).padStart(2, '0')}`;
+
+      const phoneVal = phoneRef.current.trim();
       const { error: updateError } = await supabase.auth.updateUser({
         data: {
           first_name: first,
@@ -192,6 +127,7 @@ export default function FinishSignupScreen() {
           date_of_birth: dobStr,
           ...(addr && { address: addr }),
           ...(c && { city: c }),
+          ...(phoneVal && { phone: phoneVal }),
         },
       });
       if (updateError) {
@@ -199,20 +135,18 @@ export default function FinishSignupScreen() {
         setLoading(false);
         return;
       }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('profiles')
-          .update({
-            first_name: first,
-            last_name: last,
-            date_of_birth: dobStr,
-            ...(addr && { address: addr }),
-            ...(c && { city: c }),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', user.id);
-      }
+      await supabase
+        .from('profiles')
+        .update({
+          first_name: first,
+          last_name: last,
+          date_of_birth: dobStr,
+          ...(addr && { address: addr }),
+          ...(c && { city: c }),
+          ...(phoneVal && { phone: phoneVal }),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
       await supabase.auth.refreshSession();
       router.replace('/');
     } catch (err) {
@@ -248,15 +182,15 @@ export default function FinishSignupScreen() {
           ]}
           keyboardShouldPersistTaps="always"
           showsVerticalScrollIndicator={false}>
-          {/* Legal name section */}
+          {/* Legal name section - required */}
           <ThemedText type="subtitle" style={styles.sectionLabel}>
-            Legal name
+            Legal name *
           </ThemedText>
           <View style={[styles.card, { borderColor }]}>
             <View style={[styles.row, styles.borderBottom, { borderBottomColor: borderColor }]}>
               <TextInput
                 style={[styles.input, { color: textColor }]}
-                placeholder="First name on ID"
+                placeholder="First name"
                 placeholderTextColor={secondaryTextColor}
                 value={firstName}
                 onChangeText={setFirstName}
@@ -266,7 +200,7 @@ export default function FinishSignupScreen() {
             <View style={styles.row}>
               <TextInput
                 style={[styles.input, { color: textColor }]}
-                placeholder="Last name on ID"
+                placeholder="Last name"
                 placeholderTextColor={secondaryTextColor}
                 value={lastName}
                 onChangeText={setLastName}
@@ -275,9 +209,9 @@ export default function FinishSignupScreen() {
             </View>
           </View>
 
-          {/* Date of birth section */}
+          {/* Date of birth section - required */}
           <ThemedText type="subtitle" style={styles.sectionLabel}>
-            Date of birth
+            Date of birth *
           </ThemedText>
           <Pressable
             style={[styles.card, styles.dateRow, { borderColor }]}
@@ -306,7 +240,17 @@ export default function FinishSignupScreen() {
             </View>
           )}
 
-          {/* Address section */}
+          {/* Email section - required (from account) */}
+          <ThemedText type="subtitle" style={styles.sectionLabel}>
+            Email *
+          </ThemedText>
+          <View style={[styles.card, styles.dateRow, { borderColor }]}>
+            <ThemedText style={[styles.emailText, { color: secondaryTextColor }]}>
+              {email || '—'}
+            </ThemedText>
+          </View>
+
+          {/* Address section - optional */}
           <ThemedText type="subtitle" style={styles.sectionLabel}>
             Address
           </ThemedText>
@@ -333,59 +277,22 @@ export default function FinishSignupScreen() {
             </View>
           </View>
 
-          {/* Email section */}
+          {/* Phone section - required */}
           <ThemedText type="subtitle" style={styles.sectionLabel}>
-            Email
+            Phone number *
           </ThemedText>
-          <View style={[styles.card, styles.dateRow, { borderColor }]}>
-            <ThemedText style={[styles.emailText, { color: secondaryTextColor }]}>
-              {email || '—'}
-            </ThemedText>
+          <View style={[styles.card, { borderColor }]}>
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, { color: textColor }]}
+                placeholder="e.g. (555) 123-4567"
+                placeholderTextColor={secondaryTextColor}
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+              />
+            </View>
           </View>
-
-          {/* Driver's license section */}
-          <ThemedText type="subtitle" style={styles.sectionLabel}>
-            Driver's license
-          </ThemedText>
-          <Pressable
-            style={[styles.licenseCard, { borderColor }]}
-            onPress={showLicenseImageOptions}>
-            {licenseImageUri ? (
-              <View style={styles.licensePreview}>
-                {parsingLicense && (
-                  <View style={styles.parsingOverlay}>
-                    <ActivityIndicator color="#fff" />
-                    <ThemedText style={styles.parsingText}>Scanning license...</ThemedText>
-                  </View>
-                )}
-                <Image
-                  source={{ uri: licenseImageUri }}
-                  style={styles.licenseImage}
-                />
-                <Pressable
-                  style={styles.changePhotoButton}
-                  disabled={parsingLicense}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    if (!parsingLicense) showLicenseImageOptions();
-                  }}>
-                  <ThemedText type="defaultSemiBold" style={styles.changePhotoText}>
-                    Change photo
-                  </ThemedText>
-                </Pressable>
-              </View>
-            ) : (
-              <View style={styles.licensePlaceholder}>
-                <MaterialIcons name="add-a-photo" size={40} color={secondaryTextColor} />
-                <ThemedText style={[styles.licensePlaceholderText, { color: secondaryTextColor }]}>
-                  Add photo of your license
-                </ThemedText>
-                <ThemedText style={[styles.licensePlaceholderHint, { color: secondaryTextColor }]}>
-                  Take a picture or choose from library
-                </ThemedText>
-              </View>
-            )}
-          </Pressable>
 
           {error && <ThemedText style={styles.errorText}>{error}</ThemedText>}
 
@@ -481,63 +388,6 @@ const styles = StyleSheet.create({
   },
   emailText: {
     fontSize: 16,
-  },
-  licenseCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    overflow: 'hidden',
-    marginBottom: 24,
-    minHeight: 160,
-  },
-  licensePlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 24,
-  },
-  licensePlaceholderText: {
-    fontSize: 16,
-    marginTop: 12,
-  },
-  licensePlaceholderHint: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  licensePreview: {
-    padding: 16,
-  },
-  licenseImage: {
-    width: '100%',
-    aspectRatio: 4 / 3,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
-  },
-  changePhotoButton: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  changePhotoText: {
-    color: AIRBNB_RED,
-    fontSize: 16,
-  },
-  parsingOverlay: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    bottom: 60,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  parsingText: {
-    color: '#fff',
-    marginTop: 8,
-    fontSize: 14,
   },
   errorText: {
     color: '#FF5A5F',

@@ -1,14 +1,12 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useGlobalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -18,12 +16,16 @@ import { ListingCard } from '@/components/ListingCard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import {
-  LISTING_CATEGORIES,
   type Listing,
   type ListingCategory,
 } from '@/data/listings';
 import { useListings } from '@/contexts/ListingsContext';
+import { useSavedGyms } from '@/contexts/SavedGymsContext';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { useUserLocation } from '@/lib/location';
+
+/** Default max distance (mi) when we have location and user isn't searching a specific place. */
+const DEFAULT_MAX_DISTANCE_MI = 50;
 
 export type SortOption =
   | 'distance'
@@ -53,12 +55,14 @@ function filterListings(
   category: ListingCategory,
   priceMin: number | null,
   priceMax: number | null,
-  maxDistance: number | null
+  maxDistance: number | null,
+  minRating: number | null,
+  amenities: string[]
 ): Listing[] {
   const q = searchQuery.trim().toLowerCase();
   let filtered = listings;
 
-  if (q) {
+  if (q && q !== 'nearby') {
     filtered = filtered.filter(
       (l) =>
         l.title.toLowerCase().includes(q) ||
@@ -83,6 +87,17 @@ function filterListings(
       (l) => (l.distanceFromMe ?? 0) <= maxDistance
     );
   }
+  if (minRating != null && minRating > 0) {
+    filtered = filtered.filter((l) => l.rating >= minRating);
+  }
+  if (amenities.length > 0) {
+    filtered = filtered.filter((l) => {
+      const listAmenities = (l.amenities ?? []).map((a) => a.toLowerCase());
+      return amenities.every((a) =>
+        listAmenities.some((la) => la.includes(a.toLowerCase()))
+      );
+    });
+  }
 
   return filtered;
 }
@@ -92,15 +107,47 @@ export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { listings, refreshListings } = useListings();
+  const { isSaved, toggleSaved } = useSavedGyms();
+  const { location: userLocation } = useUserLocation();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ListingCategory>('All');
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('distance');
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   const [maxDistance, setMaxDistance] = useState('');
+  const [minRating, setMinRating] = useState<number>(0);
+  const [searchAmenities, setSearchAmenities] = useState<string[]>([]);
+  const params = useGlobalSearchParams<{
+    q?: string;
+    priceMin?: string;
+    priceMax?: string;
+    minRating?: string;
+    amenities?: string;
+  }>();
+
+  // When returning from search screen (or URL has search params), apply them
+  useFocusEffect(
+    useCallback(() => {
+      if (params.q !== undefined && params.q !== null) {
+        setSearchQuery(typeof params.q === 'string' ? params.q : params.q[0] ?? '');
+      }
+      if (params.priceMin !== undefined && params.priceMin !== null) {
+        setPriceMin(typeof params.priceMin === 'string' ? params.priceMin : params.priceMin[0] ?? '');
+      }
+      if (params.priceMax !== undefined && params.priceMax !== null) {
+        setPriceMax(typeof params.priceMax === 'string' ? params.priceMax : params.priceMax[0] ?? '');
+      }
+      if (params.minRating !== undefined && params.minRating !== null) {
+        const r = typeof params.minRating === 'string' ? params.minRating : params.minRating[0] ?? '0';
+        setMinRating(parseFloat(r) || 0);
+      }
+      if (params.amenities !== undefined && params.amenities !== null) {
+        const a = typeof params.amenities === 'string' ? params.amenities : params.amenities[0] ?? '';
+        setSearchAmenities(a ? a.split(',').map((s) => s.trim()).filter(Boolean) : []);
+      }
+    }, [params.q, params.priceMin, params.priceMax, params.minRating, params.amenities])
+  );
 
   const iconColor = useThemeColor({}, 'icon');
   const borderColor = useThemeColor(
@@ -116,21 +163,30 @@ export default function ExploreScreen() {
     'text',
   );
   const textColor = useThemeColor({}, 'text');
-  const modalBg = useThemeColor({ light: '#fff', dark: '#1a1a1a' }, 'background');
 
-  const filteredListings = useMemo(() => {
-    const filtered = filterListings(
-      listings,
-      searchQuery,
-      selectedCategory,
-      priceMin ? parseFloat(priceMin) : null,
-      priceMax ? parseFloat(priceMax) : null,
-      maxDistance ? parseFloat(maxDistance) : null
-    );
-    return sortListings(filtered, sortBy);
-  }, [listings, searchQuery, selectedCategory, priceMin, priceMax, maxDistance, sortBy]);
+  // When user is searching a place (e.g. "San Francisco" for a trip), don't apply default
+    // distance—show all matching gyms. When not searching and we have location, default to nearby.
+    const hasSearch = searchQuery.trim().length > 0;
+    const effectiveMaxDistance =
+      hasSearch
+        ? (maxDistance ? parseFloat(maxDistance) : null)
+        : (maxDistance ? parseFloat(maxDistance) : (userLocation ? DEFAULT_MAX_DISTANCE_MI : null));
 
-  const cardWidth = (width - 48) / 2;
+    const filteredListings = useMemo(() => {
+      const filtered = filterListings(
+        listings,
+        searchQuery,
+        selectedCategory,
+        priceMin ? parseFloat(priceMin) : null,
+        priceMax ? parseFloat(priceMax) : null,
+        effectiveMaxDistance,
+        minRating > 0 ? minRating : null,
+        searchAmenities
+      );
+      return sortListings(filtered, sortBy);
+    }, [listings, searchQuery, selectedCategory, priceMin, priceMax, effectiveMaxDistance, minRating, searchAmenities, sortBy]);
+
+  const cardWidth = width - 48;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -138,39 +194,28 @@ export default function ExploreScreen() {
     setRefreshing(false);
   }, [refreshListings]);
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleClearFilters = () => {
-    setSearchQuery('');
-    setSelectedCategory('All');
-    setPriceMin('');
-    setPriceMax('');
-    setMaxDistance('');
-    setFilterModalVisible(false);
-  };
-
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header: search bar + filter */}
+      {/* Header: search bar */}
       <View style={styles.header}>
-        <View style={[styles.searchBar, { borderColor }]}>
+        <Pressable
+          style={[styles.searchBar, { borderColor }]}
+          onPress={() =>
+            router.push({
+              pathname: '/search',
+              params: { initialQuery: searchQuery },
+            })
+          }>
           <View style={styles.searchBarContent}>
             <MaterialIcons name="search" size={20} color={iconColor} />
             <View style={styles.searchBarText}>
-              <TextInput
-                style={[styles.searchInput, { color: textColor }]}
-                placeholder="Find a gym..."
-                placeholderTextColor={secondaryTextColor}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
+              <ThemedText
+                style={[styles.searchInput, { color: searchQuery ? textColor : secondaryTextColor }]}
+                numberOfLines={1}>
+                {searchQuery.trim().toLowerCase() === 'nearby'
+                  ? 'Gyms nearby'
+                  : searchQuery || 'Find a gym...'}
+              </ThemedText>
               <ThemedText
                 style={[styles.searchSecondary, { color: secondaryTextColor }]}
                 numberOfLines={1}>
@@ -178,12 +223,7 @@ export default function ExploreScreen() {
               </ThemedText>
             </View>
           </View>
-          <Pressable
-            style={styles.filterButton}
-            onPress={() => setFilterModalVisible(true)}>
-            <MaterialIcons name="tune" size={22} color={iconColor} />
-          </Pressable>
-        </View>
+        </Pressable>
       </View>
 
       {/* Sort options */}
@@ -194,9 +234,9 @@ export default function ExploreScreen() {
         style={styles.sortScroll}>
         {[
           { key: 'distance' as const, label: 'Distance' },
-          { key: 'price-low' as const, label: 'Price: Low to high' },
-          { key: 'price-high' as const, label: 'Price: High to low' },
-          { key: 'rating' as const, label: 'Highest rating' },
+          { key: 'price-low' as const, label: 'Price ↑' },
+          { key: 'price-high' as const, label: 'Price ↓' },
+          { key: 'rating' as const, label: 'Rating' },
         ].map((opt) => (
           <Pressable
             key={opt.key}
@@ -208,7 +248,8 @@ export default function ExploreScreen() {
             ]}>
             <ThemedText
               type={sortBy === opt.key ? 'defaultSemiBold' : 'default'}
-              style={styles.sortChipText}>
+              style={styles.sortChipText}
+              includeFontPadding={false}>
               {opt.label}
             </ThemedText>
           </Pressable>
@@ -219,8 +260,6 @@ export default function ExploreScreen() {
       <FlatList
         data={filteredListings}
         keyExtractor={(item) => item.id}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
         contentContainerStyle={[
           styles.listContent,
           { paddingBottom: insets.bottom + 80 },
@@ -230,11 +269,11 @@ export default function ExploreScreen() {
           <View style={[styles.cardWrapper, { width: cardWidth }]}>
             <ListingCard
               listing={item}
-              isFavorite={favorites.has(item.id)}
+              isFavorite={isSaved(item.id)}
               onPress={() =>
-                router.replace({ pathname: '/listing/[id]', params: { id: item.id } })
+                router.push({ pathname: '/listing/[id]', params: { id: item.id } })
               }
-              onFavoritePress={() => toggleFavorite(item.id)}
+              onFavoritePress={() => toggleSaved(item.id)}
             />
           </View>
         )}
@@ -250,86 +289,6 @@ export default function ExploreScreen() {
         }
       />
 
-      {/* Filter modal */}
-      <Modal
-        visible={filterModalVisible}
-        transparent
-        animationType="fade">
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setFilterModalVisible(false)}>
-          <Pressable
-            style={[styles.modalContent, { backgroundColor: modalBg }]}
-            onPress={(e) => e.stopPropagation()}>
-            <ThemedText type="subtitle" style={styles.modalTitle}>
-              Filters
-            </ThemedText>
-
-            <ThemedText type="defaultSemiBold" style={styles.filterLabel}>
-              Category
-            </ThemedText>
-            <View style={styles.categoryOptions}>
-              {LISTING_CATEGORIES.map((cat) => (
-                <Pressable
-                  key={cat}
-                  onPress={() => setSelectedCategory(cat)}
-                  style={[
-                    styles.categoryOption,
-                    selectedCategory === cat && { backgroundColor: optionActiveBg },
-                  ]}>
-                  <ThemedText
-                    type={selectedCategory === cat ? 'defaultSemiBold' : 'default'}>
-                    {cat}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </View>
-
-            <ThemedText type="defaultSemiBold" style={styles.filterLabel}>
-              Price range ($)
-            </ThemedText>
-            <View style={styles.filterRow}>
-              <TextInput
-                style={[styles.filterInput, { color: textColor, borderColor }]}
-                placeholder="Min"
-                placeholderTextColor={secondaryTextColor}
-                value={priceMin}
-                onChangeText={setPriceMin}
-                keyboardType="numeric"
-              />
-              <TextInput
-                style={[styles.filterInput, { color: textColor, borderColor }]}
-                placeholder="Max"
-                placeholderTextColor={secondaryTextColor}
-                value={priceMax}
-                onChangeText={setPriceMax}
-                keyboardType="numeric"
-              />
-            </View>
-
-            <ThemedText type="defaultSemiBold" style={styles.filterLabel}>
-              Distance from me (mi)
-            </ThemedText>
-            <TextInput
-              style={[styles.filterInput, { color: textColor, borderColor }]}
-              placeholder="Max distance (mi)"
-              placeholderTextColor={secondaryTextColor}
-              value={maxDistance}
-              onChangeText={setMaxDistance}
-              keyboardType="numeric"
-            />
-
-            <Pressable style={styles.clearButton} onPress={handleClearFilters}>
-              <ThemedText type="defaultSemiBold">Clear filters</ThemedText>
-            </Pressable>
-            <Pressable
-              style={styles.modalCloseButton}
-              onPress={() => setFilterModalVisible(false)}>
-              <ThemedText>Close</ThemedText>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </ThemedView>
   );
 }
@@ -340,7 +299,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingTop: 4,
     paddingBottom: 12,
     gap: 12,
   },
@@ -367,61 +326,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     padding: 0,
     margin: 0,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   searchSecondary: {
     fontSize: 12,
     marginTop: 2,
-  },
-  filterButton: {
-    padding: 6,
-    marginLeft: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.12)',
-    borderRadius: 20,
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   sortScroll: {
     marginBottom: 8,
+    minHeight: 48,
   },
   sortRow: {
     paddingHorizontal: 24,
     gap: 8,
     paddingRight: 24,
+    alignItems: 'center',
+    minHeight: 48,
   },
   sortChip: {
-    paddingVertical: 8,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 44,
   },
   sortChipText: {
     fontSize: 14,
-  },
-  filterLabel: {
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  categoryOptions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  categoryOption: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    lineHeight: 20,
   },
   listContent: {
     paddingHorizontal: 24,
     paddingTop: 8,
   },
-  row: {
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 16,
-  },
   cardWrapper: {
-    flex: 1,
+    marginBottom: 24,
   },
   emptyState: {
     paddingVertical: 48,
@@ -429,44 +372,5 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    borderRadius: 12,
-    padding: 24,
-    width: '80%',
-    maxWidth: 320,
-  },
-  modalTitle: {
-    marginBottom: 16,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  filterInput: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  clearButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 8,
-  },
-  modalCloseButton: {
-    paddingVertical: 8,
   },
 });

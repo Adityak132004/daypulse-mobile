@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import type { Listing } from '@/data/listings';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { getPlaceStatus } from '@/lib/hours';
 
 type ListingCardProps = {
   listing: Listing;
@@ -16,8 +17,10 @@ type ListingCardProps = {
 
 /**
  * Reusable card component for displaying a single gym listing.
- * Shows image, favorite button, title, location, daily price, stars, and reviews.
+ * Shows image, favorite button, title, distance, daily price, stars, and reviews.
  */
+const MAX_TITLE_LENGTH = 50;
+
 export function ListingCard({
   listing,
   onPress,
@@ -45,29 +48,51 @@ export function ListingCard({
         </Pressable>
       </ThemedView>
       <View style={styles.info}>
-        <ThemedText type="defaultSemiBold" numberOfLines={2} style={styles.title}>
-          {listing.title}
+        <ThemedText
+          type="defaultSemiBold"
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          style={styles.title}>
+          {listing.title.length > MAX_TITLE_LENGTH
+            ? `${listing.title.slice(0, MAX_TITLE_LENGTH)}…`
+            : listing.title}
         </ThemedText>
-        <View style={styles.locationRow}>
-          <MaterialIcons name="place" size={14} color={iconColor} />
-          <ThemedText style={styles.location} numberOfLines={1}>
-            {listing.location}
-          </ThemedText>
-        </View>
-        <View style={styles.distanceRow}>
-          <MaterialIcons name="near-me" size={14} color={iconColor} />
-          <ThemedText style={styles.distanceText}>
-            {(listing.distanceFromMe ?? 0)} mi away
-          </ThemedText>
-        </View>
+        {listing.hoursOfOperation ? (
+          <View style={styles.statusRow}>
+            <MaterialIcons name="schedule" size={14} color={iconColor} />
+            {(() => {
+              const status = getPlaceStatus(listing.hoursOfOperation);
+              if (status?.isOpen === true) {
+                return (
+                  <ThemedText numberOfLines={1} style={styles.statusLine}>
+                    <ThemedText style={styles.statusOpen}>Open</ThemedText>
+                    <ThemedText style={styles.statusPipe}> | Closes {status.closesAt}</ThemedText>
+                  </ThemedText>
+                );
+              }
+              if (status?.isOpen === false) {
+                return (
+                  <ThemedText numberOfLines={1} style={styles.statusLine}>
+                    <ThemedText style={styles.statusClosed}>Closed</ThemedText>
+                    <ThemedText style={styles.statusPipe}> | Opens {status.opensAt}</ThemedText>
+                  </ThemedText>
+                );
+              }
+              return null;
+            })()}
+          </View>
+        ) : null}
         <View style={styles.footer}>
           <View style={styles.ratingRow}>
-            <MaterialIcons name="star" size={14} color={iconColor} />
             <ThemedText type="defaultSemiBold" style={styles.rating}>
               {listing.rating}
             </ThemedText>
+            <MaterialIcons name="star" size={14} color="#EAB308" />
             <ThemedText style={styles.reviewCount}>
               ({listing.reviewCount})
+            </ThemedText>
+            <ThemedText style={styles.distanceInFooter}>
+              {' · '}{(listing.distanceFromMe ?? 0).toFixed(1)} mi
             </ThemedText>
           </View>
           <ThemedText type="defaultSemiBold" style={styles.price}>
@@ -106,23 +131,30 @@ const styles = StyleSheet.create({
   title: {
     marginBottom: 4,
   },
-  locationRow: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginBottom: 4,
   },
-  location: {
-    fontSize: 14,
-    opacity: 0.8,
+  statusLine: {
+    fontSize: 11,
+    flex: 1,
+    opacity: 0.9,
   },
-  distanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  statusOpen: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#16a34a',
   },
-  distanceText: {
-    fontSize: 12,
-    opacity: 0.8,
+  statusClosed: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#dc2626',
+  },
+  statusPipe: {
+    fontSize: 11,
+    opacity: 0.85,
   },
   footer: {
     flexDirection: 'row',
@@ -139,6 +171,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   reviewCount: {
+    fontSize: 14,
+    opacity: 0.8,
+    marginLeft: 2,
+  },
+  distanceInFooter: {
     fontSize: 14,
     opacity: 0.8,
     marginLeft: 2,

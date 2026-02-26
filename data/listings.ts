@@ -29,6 +29,11 @@ export type Listing = {
   category: ListingCategory;
   amenities: string[];
   distanceFromMe: number;
+  /** Gym coordinates for distance calculation */
+  latitude?: number | null;
+  longitude?: number | null;
+  /** e.g. "Open 24/7" or "Mon–Fri 5am–10pm, Sat–Sun 7am–8pm" */
+  hoursOfOperation?: string | null;
 };
 
 export const DUMMY_LISTINGS: Listing[] = [
@@ -49,6 +54,7 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: '24/7',
     amenities: ['24/7 access', 'Free weights', 'Cardio machines', 'Locker rooms', 'Personal training'],
     distanceFromMe: 1.2,
+    hoursOfOperation: 'Open 24/7',
   },
   {
     id: '2',
@@ -66,6 +72,7 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: 'CrossFit',
     amenities: ['CrossFit classes', 'Open gym', 'Showers', 'Equipment rental', 'Competition prep'],
     distanceFromMe: 3.5,
+    hoursOfOperation: 'Mon–Fri 5am–9pm, Sat–Sun 7am–6pm',
   },
   {
     id: '3',
@@ -84,6 +91,7 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: 'Yoga',
     amenities: ['Yoga classes', 'Pilates reformer', 'Meditation room', 'Mats provided', 'Retail'],
     distanceFromMe: 0.8,
+    hoursOfOperation: 'Mon–Sat 6am–8pm, Sun 8am–4pm',
   },
   {
     id: '4',
@@ -101,6 +109,7 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: 'Pool',
     amenities: ['Indoor pool', 'Hot tub', 'Sauna', 'Full gym', 'Kids club', 'Café'],
     distanceFromMe: 12.0,
+    hoursOfOperation: 'Daily 6am–10pm',
   },
   {
     id: '5',
@@ -118,6 +127,7 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: 'Budget',
     amenities: ['Squat racks', 'Deadlift platform', 'Strongman implements', 'Chalk', '24/7 key access'],
     distanceFromMe: 2.1,
+    hoursOfOperation: '24/7 key fob access',
   },
   {
     id: '6',
@@ -135,6 +145,7 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: 'Boutique',
     amenities: ['Spin classes', 'HIIT', 'Yoga', 'Smoothie bar', 'Locker rooms', 'Towels provided'],
     distanceFromMe: 4.2,
+    hoursOfOperation: 'Mon–Fri 6am–8pm, Sat–Sun 8am–4pm',
   },
   {
     id: '7',
@@ -152,6 +163,7 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: 'Yoga',
     amenities: ['Yoga classes', 'Meditation', 'Outdoor deck', 'Mats & props', 'Retail'],
     distanceFromMe: 5.7,
+    hoursOfOperation: 'Daily 6am–7pm',
   },
   {
     id: '8',
@@ -170,5 +182,6 @@ export const DUMMY_LISTINGS: Listing[] = [
     category: 'CrossFit',
     amenities: ['CrossFit', 'Recovery room', 'Outdoor turf', 'PT available', 'Ski prep programs'],
     distanceFromMe: 8.3,
+    hoursOfOperation: 'Mon–Sat 5am–9pm, Sun 7am–5pm',
   },
 ];

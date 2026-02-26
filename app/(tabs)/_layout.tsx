@@ -55,13 +55,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="host"
-        options={{
-          title: 'Host',
-          tabBarIcon: ({ color }) => <MaterialIcons name="add-circle-outline" size={28} color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

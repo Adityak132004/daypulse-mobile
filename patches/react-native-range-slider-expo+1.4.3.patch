@@ -1,0 +1,114 @@
+diff --git a/node_modules/react-native-range-slider-expo/src/RangeSlider.tsx b/node_modules/react-native-range-slider-expo/src/RangeSlider.tsx
+index 7d74a45..fdee5bd 100644
+--- a/node_modules/react-native-range-slider-expo/src/RangeSlider.tsx
++++ b/node_modules/react-native-range-slider-expo/src/RangeSlider.tsx
+@@ -76,6 +76,8 @@ const RangeSlider = memo(({
+   const [toValueScale] = useState(new Animated.Value(0.01));
+   const [rightBarScaleX] = useState(new Animated.Value(0.01));
+   const [leftBarScaleX] = useState(new Animated.Value(0.01));
++  const [leftBarTranslateX] = useState(new Animated.Value(0));
++  const [rightBarTranslateX] = useState(new Animated.Value(0));
+ 
+   // refs
+   const toValueTextRef = React.createRef<TextInput>();
+@@ -89,7 +91,7 @@ const RangeSlider = memo(({
+   }, [knobSize]);
+   
+   useEffect(() => {
+-    if (wasInitialized) {
++    if (wasInitialized && sliderWidth > 0) {
+       const stepSize = setStepSize(max, min, step);
+       fromValueTextRef.current?.setNativeProps({ text: formatLabel(min) });
+       toValueTextRef.current?.setNativeProps({ text: formatLabel(min) });
+@@ -97,11 +99,15 @@ const RangeSlider = memo(({
+         const offset = ((initialFromValue - min) / step) * stepSize - (knobSize / 2);
+         setFromValueStatic(offset, knobSize, stepSize);
+         setValueText(offset + knobSize, true);
++        const scale = (offset + (knobSize / 2)) / sliderWidth + 0.01;
++        leftBarTranslateX.setValue((sliderWidth / 2) * scale);
+       }
+       if (typeof initialToValue === 'number' && initialToValue >= min && initialToValue <= max && typeof initialFromValue === 'number' && initialToValue > initialFromValue) {
+         const offset = ((initialToValue - min) / step) * stepSize - (knobSize / 2);
+         setToValueStatic(offset, knobSize, stepSize);
+         setValueText(offset, false);
++        const scale = 1.01 - ((offset + (knobSize / 2)) / sliderWidth);
++        rightBarTranslateX.setValue(-(sliderWidth / 2) * scale);
+       }
+       Animated.timing(opacity, {
+         toValue: 1,
+@@ -109,7 +115,7 @@ const RangeSlider = memo(({
+         useNativeDriver: true
+       }).start();
+     }
+-  }, [min, max, step, initialFromValue, initialToValue, wasInitialized]);
++  }, [min, max, step, initialFromValue, initialToValue, wasInitialized, sliderWidth]);
+ 
+   useEffect(() => {
+     const sizeBasedOnStyleSize = typeof styleSize === 'number' ? styleSize : styleSize === 'small' ? SMALL_SIZE : styleSize === 'medium' ? MEDIUM_SIZE : LARGE_SIZE;
+@@ -129,7 +135,9 @@ const RangeSlider = memo(({
+   }
+   const setFromValue = (newOffset: number) => {
+     translateXfromValue.setValue(newOffset);
+-    leftBarScaleX.setValue((newOffset + (knobSize / 2)) / sliderWidth + 0.01);
++    const scale = (newOffset + (knobSize / 2)) / sliderWidth + 0.01;
++    leftBarScaleX.setValue(scale);
++    leftBarTranslateX.setValue((sliderWidth / 2) * scale);
+   }
+   const setToValueStatic = (newOffset: number, knobSize: number, stepInPixels: number) => {
+     newOffset = Math.ceil((newOffset + (knobSize / 2)) / stepInPixels) * stepInPixels - (knobSize / 2);
+@@ -140,7 +148,9 @@ const RangeSlider = memo(({
+   }
+   const setToValue = (newOffset: number) => {
+     translateXtoValue.setValue(newOffset);
+-    rightBarScaleX.setValue(1.01 - ((newOffset + (knobSize / 2)) / sliderWidth));
++    const scale = 1.01 - ((newOffset + (knobSize / 2)) / sliderWidth);
++    rightBarScaleX.setValue(scale);
++    rightBarTranslateX.setValue(-(sliderWidth / 2) * scale);
+   }
+   const setStepSize = (max: number, min: number, step: number) => {
+     const numberOfSteps = ((max - min) / step);
+@@ -164,7 +174,9 @@ const RangeSlider = memo(({
+     if (totalOffset >= -knobSize / 2 && totalOffset < toValueOffset) {
+       translateXfromValue.setValue(totalOffset);
+       setValueText(totalOffset, true);
+-      leftBarScaleX.setValue((totalOffset + (knobSize / 2)) / sliderWidth + 0.01);
++      const scale = (totalOffset + (knobSize / 2)) / sliderWidth + 0.01;
++      leftBarScaleX.setValue(scale);
++      leftBarTranslateX.setValue((sliderWidth / 2) * scale);
+     }
+   }
+   const onHandlerStateChangeFromValue = (event: PanGestureHandlerGestureEvent) => {
+@@ -192,7 +204,9 @@ const RangeSlider = memo(({
+     if (totalOffset <= sliderWidth - knobSize / 2 && totalOffset > fromValueOffset) {
+       translateXtoValue.setValue(totalOffset);
+       setValueText(totalOffset, false);
+-      rightBarScaleX.setValue(1.01 - ((totalOffset + (knobSize / 2)) / sliderWidth));
++      const scale = 1.01 - ((totalOffset + (knobSize / 2)) / sliderWidth);
++      rightBarScaleX.setValue(scale);
++      rightBarTranslateX.setValue(-(sliderWidth / 2) * scale);
+     }
+   }
+   const onHandlerStateChangeToValue = (event: PanGestureHandlerGestureEvent) => {
+@@ -210,7 +224,9 @@ const RangeSlider = memo(({
+       }
+       setToValueOffset(newOffset);
+       translateXtoValue.setValue(newOffset);
+-      rightBarScaleX.setValue(1.01 - ((newOffset + (knobSize / 2)) / sliderWidth));
++      const scale = 1.01 - ((newOffset + (knobSize / 2)) / sliderWidth);
++      rightBarScaleX.setValue(scale);
++      rightBarTranslateX.setValue(-(sliderWidth / 2) * scale);
+       scaleTo(toValueScale, 0.01);
+       const changeTo = Math.ceil(((newOffset + (knobSize / 2)) * (max - min) / sliderWidth) / step) * step + min;
+       toValueOnChange(decimalRound(changeTo));
+@@ -267,9 +283,9 @@ const RangeSlider = memo(({
+         }
+         <View style={{ width: '100%', height: knobSize, marginVertical: 4, position: 'relative', flexDirection, alignItems: 'center' }}>
+           <View style={{ position: 'absolute', backgroundColor: inRangeBarColor, left: knobSize / 4, marginLeft: -knobSize / 4, right: knobSize / 4, height: barHeight }} onLayout={onLayout} />
+-          <Animated.View style={{ position: 'absolute', left: knobSize / 4, marginLeft: -knobSize / 4, right: knobSize / 4, height: barHeight, backgroundColor: outOfRangeBarColor, transform: [{ translateX: sliderWidth / 2 }, { scaleX: rightBarScaleX }, { translateX: -sliderWidth / 2 }] }} />
++          <Animated.View style={{ position: 'absolute', left: knobSize / 4, marginLeft: -knobSize / 4, right: knobSize / 4, height: barHeight, backgroundColor: outOfRangeBarColor, transform: [{ translateX: sliderWidth / 2 }, { scaleX: rightBarScaleX }, { translateX: rightBarTranslateX }] }} />
+           <Animated.View style={{ position: 'absolute', left: -knobSize / 4, width: knobSize / 2, height: barHeight, borderRadius: barHeight, backgroundColor: outOfRangeBarColor }} />
+-          <Animated.View style={{ width: sliderWidth, height: barHeight, backgroundColor: outOfRangeBarColor, transform: [{ translateX: -sliderWidth / 2 }, { scaleX: leftBarScaleX }, { translateX: sliderWidth / 2 }] }} />
++          <Animated.View style={{ width: sliderWidth, height: barHeight, backgroundColor: outOfRangeBarColor, transform: [{ translateX: -sliderWidth / 2 }, { scaleX: leftBarScaleX }, { translateX: leftBarTranslateX }] }} />
+           <Animated.View style={{ position: 'absolute', left: sliderWidth - knobSize / 4, width: knobSize / 2, height: barHeight, borderRadius: barHeight, backgroundColor: outOfRangeBarColor }} />
+           <PanGestureHandler onGestureEvent={onGestureEventFromValue} onHandlerStateChange={onHandlerStateChangeFromValue}>
+             <Animated.View style={[styles.knob, { height: knobSize, width: knobSize, borderRadius: knobSize, backgroundColor: fromKnobColor, elevation: fromElevation, transform: [{ translateX: translateXfromValue }] }]} />

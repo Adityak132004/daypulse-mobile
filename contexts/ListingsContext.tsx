@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 
 import { DUMMY_LISTINGS, type Listing } from '@/data/listings';
 import { fetchListings, insertListing } from '@/lib/listings';
+import { distanceMiles, useUserLocation } from '@/lib/location';
 
 export type NewListingInput = {
   title: string;
@@ -33,18 +34,37 @@ const DEFAULT_IMAGES = [
 export function ListingsProvider({ children }: { children: React.ReactNode }) {
   const [listings, setListings] = useState<Listing[]>(DUMMY_LISTINGS);
   const [isLoading, setIsLoading] = useState(true);
+  const { location: userLocation } = useUserLocation();
 
   const refreshListings = useCallback(async () => {
-    const fromDb = await fetchListings();
+    const userLat = userLocation?.latitude ?? null;
+    const userLon = userLocation?.longitude ?? null;
+    const fromDb = await fetchListings(userLat, userLon);
     if (fromDb.length > 0) {
       setListings(fromDb);
     }
     setIsLoading(false);
-  }, []);
+  }, [userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
     refreshListings();
   }, [refreshListings]);
+
+  // When user location becomes available, update distances on existing listings
+  // so we don't show 0.0 mi if the initial fetch happened before location was ready.
+  useEffect(() => {
+    if (userLocation == null) return;
+    setListings((prev) =>
+      prev.map((listing) => {
+        const lat = listing.latitude;
+        const lon = listing.longitude;
+        if (lat == null || lon == null) return listing;
+        const distanceFromMe =
+          Math.round(distanceMiles(userLocation.latitude, userLocation.longitude, lat, lon) * 10) / 10;
+        return { ...listing, distanceFromMe };
+      })
+    );
+  }, [userLocation?.latitude, userLocation?.longitude]);
 
   const addListing = useCallback(async (input: NewListingInput) => {
     const imageUrls = input.imageUrls ?? (input.imageUrl ? [input.imageUrl] : DEFAULT_IMAGES);
